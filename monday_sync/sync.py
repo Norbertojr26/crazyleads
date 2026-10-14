@@ -3,8 +3,9 @@
 
 Fluxo da rotina diária:
   1. python sync.py listar              -> lê os quadros, grava estado/itens.json e estado/ads.json
-  2. python sync.py sql --modo pago     -> imprime as consultas em lotes (<= 50 anúncios = <= 100 linhas)
-     A rotina roda cada lote no CrazyLeads (test_sql) e junta as linhas em estado/metricas_pago.json
+  2. python sync.py sql --modo pago     -> grava estado/lote_<n>.sql (uma linha de resposta por lote)
+     A rotina roda cada lote no CrazyLeads (test_sql) e grava a resposta em estado/resp_<n>.txt
+     python sync.py juntar               -> monta estado/metricas_pago.json
   3. python sync.py aplicar --modo pago -> mostra o que mudaria (simulação)
      python sync.py aplicar --modo pago --executar -> escreve no Monday
 
@@ -22,8 +23,9 @@ import urllib.request
 AQUI = os.path.dirname(os.path.abspath(__file__))
 ESTADO = os.path.join(AQUI, "estado")
 API = "https://api.monday.com/v2"
-LOTE_SQL = 50
-RE_AD = re.compile(r"(\d{10,})")
+LOTE_SQL = 460  # anúncios por consulta; a resposta compacta vem numa linha só
+RE_AD = re.compile(r"(?<![a-z])ad:\s*(\d{10,})", re.I)
+RE_NUM = re.compile(r"(\d{10,})")
 
 
 def carregar_config(caminho=None):
@@ -102,8 +104,12 @@ def achar_coluna(colunas, titulo):
 
 
 def extrair_ads(texto):
-    """'ad:1202463318...' (um ou vários, separados por vírgula/espaço) -> lista de ad_ids."""
-    return RE_AD.findall(texto or "")
+    """'ad:1202...|cr:...|ig:...' -> só os ad_ids. Sem nenhum prefixo 'xx:', aceita números soltos."""
+    texto = texto or ""
+    ads = RE_AD.findall(texto)
+    if ads or re.search(r"[a-z]+:", texto, re.I):
+        return ads
+    return RE_NUM.findall(texto)
 
 
 def normalizar_plataforma(texto):
@@ -171,6 +177,12 @@ def cmd_listar(args, cfg):
             print(f"! {b['name']}: sem coluna '{cfg['colunas_chave']['meta_ids']}', ignorado")
             continue
         ids = [cm["id"]] + ([cp["id"]] if cp else [])
+        # também as colunas de saída, para o aplicar só regravar o que mudou
+        for modo in cfg["modos"].values():
+            for spec in modo["colunas"].values():
+                c = achar_coluna(cols, spec["titulo"])
+                if c and c["id"] not in ids:
+                    ids.append(c["id"])
         itens = api.itens(q["id"], ids)
         n_ad = 0
         for it in itens:
@@ -189,16 +201,76 @@ def cmd_listar(args, cfg):
     print(f"\n{len(ads)} anúncios distintos -> estado/ads.json")
 
 
+def montar_sql(tpl, ads, inicio):
+    """Consulta de um lote que devolve UMA linha: n (anúncios com dado) e d, no formato compacto
+    'IDXd fc,fcm,fv/ic,icm,iv' (dividido) ou 'IDXs c,cm,v' (sem divisão), separados por 'x'.
+    IDX é a posição do anúncio em estado/ads.json. Assim o lote cabe no limite de 100 linhas do test_sql."""
+    tpl = "\n".join(l for l in tpl.splitlines() if not l.startswith("--")).rstrip()
+    tpl = tpl[:-len("ORDER BY 1,2")] if tpl.endswith("ORDER BY 1,2") else tpl
+    arr = ",".join(f"'{a}'" for a in ads)
+    q = tpl.replace("WITH ids AS (SELECT unnest(ARRAY[{{IDS}}]) AS ad_id),",
+                    f"WITH ids AS (SELECT ad_id, (n-1+{inicio})::int idx FROM unnest(ARRAY[{arr}]) WITH ORDINALITY u(ad_id,n)),")
+    q = q.replace("\nSELECT ad_id, plat AS plataforma,", "\n, r AS (SELECT ad_id, plat AS plataforma,").rstrip() + ")\n"
+    return q + ("SELECT count(*) n, string_agg(idx||b||CASE WHEN b='s' THEN f ELSE f||'/'||ig END, 'x' ORDER BY idx) d FROM ("
+                "SELECT ids.idx, max(left(r.base,1)) b, "
+                "max(r.curtidas||','||r.comentarios||','||r.views) FILTER (WHERE r.plataforma='facebook') f, "
+                "max(r.curtidas||','||r.comentarios||','||r.views) FILTER (WHERE r.plataforma='instagram') ig "
+                "FROM r JOIN ids USING(ad_id) GROUP BY 1) g")
+
+
+def ler_resposta(n, d, ads):
+    """Converte a resposta compacta de um lote em linhas {ad_id, plataforma, base, curtidas, comentarios, views}."""
+    linhas = []
+    for e in (d or "").split("x"):
+        if not e:
+            continue
+        m = re.fullmatch(r"(\d+)([ds])([\d,/]+)", e)
+        if not m:
+            raise SystemExit(f"Entrada inválida na resposta: {e!r}")
+        idx, k, v = int(m.group(1)), m.group(2), [int(x) for x in re.split("[,/]", m.group(3))]
+        if len(v) != (6 if k == "d" else 3):
+            raise SystemExit(f"Entrada incompleta na resposta: {e!r}")
+        for plat, vv in (("facebook", v[:3]), ("instagram", v[3:] if k == "d" else v[:3])):
+            linhas.append({"ad_id": ads[idx], "plataforma": plat, "base": "dividido" if k == "d" else "sem divisão",
+                           "curtidas": vv[0], "comentarios": vv[1], "views": vv[2]})
+    if len(linhas) != 2 * int(n):
+        raise SystemExit(f"Resposta com {len(linhas) // 2} anúncios, esperado {n}. Copie a resposta de novo.")
+    return linhas
+
+
 def cmd_sql(args, cfg):
     with open(os.path.join(ESTADO, "ads.json")) as f:
         ads = json.load(f)
     with open(os.path.join(AQUI, "sql", f"{args.modo}.sql"), encoding="utf-8") as f:
         tpl = f.read()
-    lotes = [ads[i:i + LOTE_SQL] for i in range(0, len(ads), LOTE_SQL)]
-    saida = [tpl.replace("{{IDS}}", ",".join(f"'{a}'" for a in l)) for l in lotes]
-    with open(os.path.join(ESTADO, f"lotes_{args.modo}.json"), "w", encoding="utf-8") as f:
-        json.dump(saida, f, ensure_ascii=False)
-    print(f"{len(saida)} lotes de até {LOTE_SQL} anúncios -> estado/lotes_{args.modo}.json")
+    for velho in os.listdir(ESTADO):
+        if re.fullmatch(r"(lote|resp)_\d+\.(sql|txt)", velho):
+            os.remove(os.path.join(ESTADO, velho))
+    n = 0
+    for n, i in enumerate(range(0, len(ads), LOTE_SQL), 1):
+        with open(os.path.join(ESTADO, f"lote_{n}.sql"), "w", encoding="utf-8") as f:
+            f.write(montar_sql(tpl, ads[i:i + LOTE_SQL], i))
+    print(f"{n} lotes de até {LOTE_SQL} anúncios -> estado/lote_1.sql … lote_{n}.sql")
+    print("Rode cada lote no CrazyLeads (test_sql) e grave a resposta em estado/resp_<n>.txt: "
+          "1ª linha o valor de n, 2ª linha o valor de d. Depois: python3 sync.py juntar")
+
+
+def cmd_juntar(args, cfg):
+    with open(os.path.join(ESTADO, "ads.json")) as f:
+        ads = json.load(f)
+    lotes = sorted(f for f in os.listdir(ESTADO) if re.fullmatch(r"lote_\d+\.sql", f))
+    linhas = []
+    for lote in lotes:
+        resp = os.path.join(ESTADO, lote.replace("lote_", "resp_").replace(".sql", ".txt"))
+        if not os.path.exists(resp):
+            raise SystemExit(f"Falta {os.path.basename(resp)} (resposta de {lote}).")
+        with open(resp, encoding="utf-8") as f:
+            partes = f.read().strip().split("\n", 1)
+        d = partes[1].strip() if len(partes) > 1 else ""
+        linhas += ler_resposta(partes[0].strip(), None if d in ("", "null", "None") else d, ads)
+    with open(os.path.join(ESTADO, f"metricas_{args.modo}.json"), "w", encoding="utf-8") as f:
+        json.dump(linhas, f, ensure_ascii=False)
+    print(f"{len(lotes)} respostas, {len(linhas) // 2} anúncios com dado -> estado/metricas_{args.modo}.json")
 
 
 def cmd_aplicar(args, cfg):
@@ -257,6 +329,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("listar")
     s = sub.add_parser("sql"); s.add_argument("--modo", default="pago")
+    j = sub.add_parser("juntar"); j.add_argument("--modo", default="pago")
     a = sub.add_parser("aplicar")
     a.add_argument("--modo", default="pago", choices=["pago", "post"])
     a.add_argument("--dados")
@@ -264,7 +337,7 @@ def main(argv=None):
     a.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     cfg = carregar_config(args.config)
-    {"listar": cmd_listar, "sql": cmd_sql, "aplicar": cmd_aplicar}[args.cmd](args, cfg)
+    {"listar": cmd_listar, "sql": cmd_sql, "juntar": cmd_juntar, "aplicar": cmd_aplicar}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

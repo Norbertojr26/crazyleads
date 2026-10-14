@@ -12,6 +12,10 @@ class Regras(unittest.TestCase):
         self.assertEqual(sync.extrair_ads("ad:120246331810840208"), ["120246331810840208"])
         self.assertEqual(sync.extrair_ads("ad:120246331810840208, ad:120249384910000000"),
                          ["120246331810840208", "120249384910000000"])
+        self.assertEqual(sync.extrair_ads("ad:120246331808400208|cr:1696153251530713|ig:18096672653185976"),
+                         ["120246331808400208"])
+        self.assertEqual(sync.extrair_ads("cr:1696153251530713|ig:18096672653185976"), [])
+        self.assertEqual(sync.extrair_ads("120246331810840208"), ["120246331810840208"])
         self.assertEqual(sync.extrair_ads(""), [])
         self.assertEqual(sync.extrair_ads(None), [])
 
@@ -48,6 +52,26 @@ class Regras(unittest.TestCase):
         atual = {"c1": "20.600", "c2": "280", "c3": "dividido"}
         self.assertEqual(sync.diff_item(atual, {"curtidas": 20600, "comentarios": 281, "base": "dividido"}, mapa), {"c2": "281"})
         self.assertEqual(sync.diff_item({}, {"curtidas": 0}, {"curtidas": "c1"}), {"c1": "0"})
+
+
+    def test_resposta_compacta(self):
+        ads = ["111", "222", "333"]
+        linhas = sync.ler_resposta("2", "0d5,1,100/7,0,50x2s3,0,9", ads)
+        self.assertEqual(linhas[0], {"ad_id": "111", "plataforma": "facebook", "base": "dividido",
+                                     "curtidas": 5, "comentarios": 1, "views": 100})
+        self.assertEqual(linhas[1]["views"], 50)
+        self.assertEqual([(l["ad_id"], l["plataforma"], l["base"], l["curtidas"]) for l in linhas[2:]],
+                         [("333", "facebook", "sem divisão", 3), ("333", "instagram", "sem divisão", 3)])
+        self.assertEqual(sync.ler_resposta("0", None, ads), [])
+        with self.assertRaises(SystemExit):
+            sync.ler_resposta("3", "0d5,1,100/7,0,50", ads)  # contagem não bate: resposta truncada
+
+    def test_sql_compacto_tem_um_lote_com_indices(self):
+        tpl = open(os.path.join(os.path.dirname(os.path.abspath(sync.__file__)), "sql", "pago.sql"), encoding="utf-8").read()
+        q = sync.montar_sql(tpl, ["120246331808400208"], 460)
+        self.assertIn("(n-1+460)::int idx", q)
+        self.assertIn("'x' ORDER BY idx", q)
+        self.assertNotIn("{{IDS}}", q)
 
 
 class FluxoAplicar(unittest.TestCase):
