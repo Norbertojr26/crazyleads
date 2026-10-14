@@ -1,7 +1,7 @@
 # Sincronização CrazyLeads → Monday (monitoramento de campanhas)
 
 Abastece os 7 quadros de monitoramento (`boards.json`) com as interações de cada anúncio,
-casando o item do Monday pelo **Meta ID** (`ad:1202…`) e pela coluna **Plataforma** (Instagram/Facebook).
+casando o item do Monday pelo **Meta ID** (só o `ad:1202…`; `cr:` e `ig:` são ignorados) e pela coluna **Plataforma** (Instagram/Facebook).
 
 ## Dois modos
 
@@ -27,8 +27,10 @@ O modo `pago` nunca toca nas colunas atuais.
 ```bash
 cd monday_sync
 python3 sync.py listar                 # lê os quadros -> estado/itens.json, estado/ads.json
-python3 sync.py sql --modo pago        # gera estado/lotes_pago.json (lotes de 50 anúncios)
-# para cada lote: rodar no CrazyLeads (test_sql) e juntar todas as linhas em estado/metricas_pago.json
+python3 sync.py sql --modo pago        # gera estado/lote_<n>.sql (até 460 anúncios; a resposta vem numa linha só)
+# para cada lote: rodar no CrazyLeads (test_sql) e gravar estado/resp_<n>.txt
+#   1ª linha: o valor de n · 2ª linha: o valor de d, copiado inteiro
+python3 sync.py juntar                 # confere as contagens e gera estado/metricas_pago.json
 python3 sync.py aplicar --modo pago -v # simulação: mostra o que mudaria
 python3 sync.py aplicar --modo pago --executar
 ```
