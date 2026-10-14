@@ -177,6 +177,12 @@ def cmd_listar(args, cfg):
             print(f"! {b['name']}: sem coluna '{cfg['colunas_chave']['meta_ids']}', ignorado")
             continue
         ids = [cm["id"]] + ([cp["id"]] if cp else [])
+        # também as colunas de saída, para o aplicar só regravar o que mudou
+        for modo in cfg["modos"].values():
+            for spec in modo["colunas"].values():
+                c = achar_coluna(cols, spec["titulo"])
+                if c and c["id"] not in ids:
+                    ids.append(c["id"])
         itens = api.itens(q["id"], ids)
         n_ad = 0
         for it in itens:
