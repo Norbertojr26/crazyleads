@@ -1,0 +1,36 @@
+{
+  "quadros": [
+    {"id": "4223103403",  "nome": "VTSD - Monitoramento de campanhas",    "grupo": "perpetuo"},
+    {"id": "4223163443",  "nome": "S10X - Monitoramento de campanhas",    "grupo": "perpetuo"},
+    {"id": "4909479783",  "nome": "LC - Monitoramento de campanhas",      "grupo": "perpetuo"},
+    {"id": "18403859439", "nome": "FX - Monitoramento de campanhas",      "grupo": "perpetuo"},
+    {"id": "18425561575", "nome": "TRF PRO - Monitoramento de campanhas", "grupo": "perpetuo"},
+    {"id": "18425562824", "nome": "ARV - Monitoramento de campanhas",     "grupo": "perpetuo"},
+    {"id": "18434027990", "nome": "BFI26 - Monit. de campanhas",          "grupo": "pico"}
+  ],
+  "colunas_chave": {
+    "meta_ids": "Meta IDs",
+    "plataforma": "Plataforma"
+  },
+  "modos": {
+    "pago": {
+      "descricao": "Interações da veiculação paga (API de anúncios da Meta via CrazyLeads). Vai em colunas próprias, sem tocar nas colunas atuais.",
+      "criar_colunas": true,
+      "colunas": {
+        "curtidas":    {"titulo": "Curtidas (pago)",    "tipo": "numbers"},
+        "comentarios": {"titulo": "Comentários (pago)", "tipo": "numbers"},
+        "views":       {"titulo": "Views (pago)",       "tipo": "numbers"},
+        "base":        {"titulo": "Base (pago)",        "tipo": "text"}
+      }
+    },
+    "post": {
+      "descricao": "Total do post (orgânico + pago), lido da Graph API com o token de Páginas/Instagram. Escreve nas colunas que o time já usa.",
+      "criar_colunas": false,
+      "colunas": {
+        "curtidas":    {"titulo": "Curtidas",     "tipo": "numbers"},
+        "comentarios": {"titulo": "Comentários",  "tipo": "numbers"},
+        "views":       {"titulo": "Visualização", "tipo": "numbers", "opcional": true}
+      }
+    }
+  }
+}
