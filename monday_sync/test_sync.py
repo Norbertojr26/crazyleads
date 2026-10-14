@@ -12,6 +12,10 @@ class Regras(unittest.TestCase):
         self.assertEqual(sync.extrair_ads("ad:120246331810840208"), ["120246331810840208"])
         self.assertEqual(sync.extrair_ads("ad:120246331810840208, ad:120249384910000000"),
                          ["120246331810840208", "120249384910000000"])
+        self.assertEqual(sync.extrair_ads("ad:120246331808400208|cr:1696153251530713|ig:18096672653185976"),
+                         ["120246331808400208"])
+        self.assertEqual(sync.extrair_ads("cr:1696153251530713|ig:18096672653185976"), [])
+        self.assertEqual(sync.extrair_ads("120246331810840208"), ["120246331810840208"])
         self.assertEqual(sync.extrair_ads(""), [])
         self.assertEqual(sync.extrair_ads(None), [])
 

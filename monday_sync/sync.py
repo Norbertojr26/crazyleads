@@ -23,7 +23,8 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 ESTADO = os.path.join(AQUI, "estado")
 API = "https://api.monday.com/v2"
 LOTE_SQL = 50
-RE_AD = re.compile(r"(\d{10,})")
+RE_AD = re.compile(r"(?<![a-z])ad:\s*(\d{10,})", re.I)
+RE_NUM = re.compile(r"(\d{10,})")
 
 
 def carregar_config(caminho=None):
@@ -102,8 +103,12 @@ def achar_coluna(colunas, titulo):
 
 
 def extrair_ads(texto):
-    """'ad:1202463318...' (um ou vários, separados por vírgula/espaço) -> lista de ad_ids."""
-    return RE_AD.findall(texto or "")
+    """'ad:1202...|cr:...|ig:...' -> só os ad_ids. Sem nenhum prefixo 'xx:', aceita números soltos."""
+    texto = texto or ""
+    ads = RE_AD.findall(texto)
+    if ads or re.search(r"[a-z]+:", texto, re.I):
+        return ads
+    return RE_NUM.findall(texto)
 
 
 def normalizar_plataforma(texto):
