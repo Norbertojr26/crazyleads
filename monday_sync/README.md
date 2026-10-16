@@ -36,7 +36,29 @@ python3 sync.py aplicar --modo pago --executar
 ```
 `estado/` guarda dados de trabalho e não vai para o git.
 
+## Quadro "IG - Crescimento" (campanhas COOKING de seguidores) — `ig_crescimento.py`
+Quadro diferente: **cada item é uma campanha num mês** (o grupo, ex. "Outubro/26"), sem Meta ID de anúncio nem Plataforma.
+- **Meta ID** (`camp:<id da campanha>`): a rotina preenche sozinha casando nome + data com as campanhas do dataset
+  `ppt_cooking`. Só grava quando a confiança é alta; nos outros casos avisa no resumo para preencher à mão.
+  Itens duplicados da mesma campanha no mesmo mês (ex. link `/p/` e `/reel/`) ficam com `ignorar` (fica o `/reel/`).
+- **Curtidas/Comentários/Views (pago)**: interações pagas vitalícias da campanha, só no item do mês mais recente dela
+  (a Meta não dá esse número por mês).
+- **Investimento / Seguidores pré / Seguidores pós**: gasto do mês e seguidores acumulados no impulsionamento (itens
+  da mesma campanha com o mesmo Início), **só no mês atual** (e no anterior até o dia 3). O histórico não é tocado e
+  a rotina nunca diminui Investimento nem Seguidores pós (o quadro pode ter sido atualizado à mão com dado mais novo).
+
+```bash
+cd monday_sync
+python3 ig_crescimento.py listar
+python3 ig_crescimento.py sql          # estado/ig_lote_campanhas.sql e estado/ig_lote_meses.sql
+# rodar cada um no CrazyLeads (test_sql) e gravar estado/ig_resp_campanhas.txt e estado/ig_resp_meses.txt
+#   1ª linha: o valor de n · 2ª linha: o valor de d, copiado inteiro
+python3 ig_crescimento.py juntar
+python3 ig_crescimento.py aplicar -v   # simulação
+python3 ig_crescimento.py aplicar --executar
+```
+
 ## Testes
 ```bash
-cd monday_sync && python3 -m unittest -v test_sync
+cd monday_sync && python3 -m unittest -v test_sync test_ig_crescimento
 ```

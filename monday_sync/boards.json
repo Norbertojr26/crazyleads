@@ -12,6 +12,15 @@
     "meta_ids": "Meta IDs",
     "plataforma": "Plataforma"
   },
+  "ig_crescimento": {
+    "id": "2707859398",
+    "nome": "IG - Crescimento",
+    "colunas": {
+      "meta_id": "Meta ID", "inicio": "Início", "publico": "Público", "link": "Link",
+      "investimento": "Investimento", "seg_pre": "Seguidores pré", "seg_pos": "Seguidores pós",
+      "curtidas": "Curtidas (pago)", "comentarios": "Comentários (pago)", "views": "Views (pago)"
+    }
+  },
   "modos": {
     "pago": {
       "descricao": "Interações da veiculação paga (API de anúncios da Meta via CrazyLeads). Vai em colunas próprias, sem tocar nas colunas atuais.",
